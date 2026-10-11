@@ -1,10 +1,41 @@
 /**
- * Remote PC Wake-on-LAN Controller - Frontend Logic
+ * Remote PC Wake-on-LAN Controller - Frontend Logic (GitHub Pages & Local Server Uyumlu)
  */
 
 let authToken = sessionStorage.getItem('wol_token') || null;
 let statusInterval = null;
 let isWaking = false;
+
+// GitHub Pages veya Harici Tünel URL desteği
+let backendUrl = localStorage.getItem('backend_url') || '';
+
+function apiUrl(endpoint) {
+  if (backendUrl && backendUrl.trim().length > 0) {
+    return backendUrl.trim().replace(/\/+$/, '') + endpoint;
+  }
+  return endpoint;
+}
+
+// Varsayılan Ayarlar (Eren PC)
+const DEFAULT_CONFIG = {
+  target_mac: '2C:F0:5D:A7:F0:EC',
+  target_ip: '192.168.1.114',
+  broadcast_ip: '192.168.1.255',
+  wol_port: 9,
+  pc_name: 'Eren PC'
+};
+
+function getLocalConfig() {
+  try {
+    const saved = localStorage.getItem('wol_custom_config');
+    if (saved) return { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
+  } catch (_) {}
+  return { ...DEFAULT_CONFIG };
+}
+
+function saveLocalConfig(cfg) {
+  localStorage.setItem('wol_custom_config', JSON.stringify(cfg));
+}
 
 // DOM Elemanları
 const loginView = document.getElementById('login-view');
@@ -46,6 +77,7 @@ const cfgMac = document.getElementById('cfg-mac');
 const cfgIp = document.getElementById('cfg-ip');
 const cfgBroadcast = document.getElementById('cfg-broadcast');
 const cfgPort = document.getElementById('cfg-port');
+const cfgServerUrl = document.getElementById('cfg-server-url');
 
 const modalGuide = document.getElementById('modal-guide');
 const btnGuide = document.getElementById('btn-guide');
@@ -55,7 +87,6 @@ const guidePhoneUrl = document.getElementById('guide-phone-url');
 
 // ================= BAŞLANGIÇ =================
 window.addEventListener('DOMContentLoaded', () => {
-  // Rehberdeki adresi tarayıcının o anki IP'sine göre ayarla
   const currentHost = window.location.host || '192.168.1.114:5000';
   if (guidePhoneUrl) {
     guidePhoneUrl.textContent = `http://${currentHost}`;
@@ -86,32 +117,54 @@ loginForm.addEventListener('submit', async (e) => {
   const username = usernameInput.value.trim();
   const password = passwordInput.value.trim();
 
-  // Yükleniyor durumu
   btnLogin.querySelector('.btn-text').classList.add('hidden');
   btnLogin.querySelector('.spinner').classList.remove('hidden');
 
+  let loginSuccess = false;
+  let responseData = null;
+
   try {
-    const res = await fetch('/api/login', {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    const res = await fetch(apiUrl('/api/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
-    const data = await res.json();
-
-    if (res.ok && data.success) {
-      authToken = data.token;
-      sessionStorage.setItem('wol_token', authToken);
-      appendLog('Giriş başarılı (admin). Oturum başlatıldı.', 'success');
-      showDashboard();
-    } else {
-      showLoginError(data.message || 'Hatalı şifre! (Varsayılan: 3321)');
+    if (res.ok) {
+      responseData = await res.json();
+      if (responseData.success) {
+        loginSuccess = true;
+        authToken = responseData.token;
+      }
+    } else if (res.status === 404) {
+      // GitHub Pages statik mod
+      if (username === 'admin' && password === '3321') {
+        loginSuccess = true;
+        authToken = 'gh_static_token_' + Date.now();
+      }
     }
   } catch (err) {
-    showLoginError('Sunucuya bağlanılamadı. Lütfen sunucunun çalıştığından emin olun.');
+    // Sunucuya ulaşılamadı (GitHub Pages veya çevrimdışı)
+    if (username === 'admin' && password === '3321') {
+      loginSuccess = true;
+      authToken = 'gh_static_token_' + Date.now();
+    }
   } finally {
     btnLogin.querySelector('.btn-text').classList.remove('hidden');
     btnLogin.querySelector('.spinner').classList.add('hidden');
+  }
+
+  if (loginSuccess) {
+    sessionStorage.setItem('wol_token', authToken);
+    appendLog('Giriş başarılı (admin). Oturum açıldı.', 'success');
+    showDashboard();
+  } else {
+    showLoginError('Hatalı şifre veya kullanıcı adı!');
   }
 });
 
@@ -162,8 +215,18 @@ btnClearLog.addEventListener('click', () => {
 
 // ================= BİLGİSAYAR DURUMU PİNG =================
 async function checkPcStatus() {
+  const localCfg = getLocalConfig();
+  displayPcName.textContent = localCfg.pc_name || 'Eren PC';
+  displayMac.textContent = localCfg.target_mac || '2C:F0:5D:A7:F0:EC';
+  displayIp.textContent = `${localCfg.target_ip} : ${localCfg.wol_port || 9}`;
+
   try {
-    const res = await fetch('/api/status');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    const res = await fetch(apiUrl('/api/status'), { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     const data = await res.json();
     if (data.success) {
       if (data.online) {
@@ -173,13 +236,19 @@ async function checkPcStatus() {
         pcStatusPill.className = 'status-pill offline';
         pcStatusLabel.textContent = 'Çevrimdışı (Kapalı)';
       }
-      displayPcName.textContent = data.pc_name || 'Eren PC';
-      displayMac.textContent = data.target_mac || '2C:F0:5D:A7:F0:EC';
-      displayIp.textContent = `${data.target_ip} : 9`;
+      return;
     }
   } catch (err) {
-    pcStatusPill.className = 'status-pill offline';
-    pcStatusLabel.textContent = 'Ağ Hatası';
+    if (backendUrl) {
+      pcStatusPill.className = 'status-pill offline';
+      pcStatusLabel.textContent = 'Tünel Bekleniyor';
+    } else if (window.location.hostname.includes('github.io')) {
+      pcStatusPill.className = 'status-pill offline';
+      pcStatusLabel.textContent = 'GitHub Pages Modu';
+    } else {
+      pcStatusPill.className = 'status-pill offline';
+      pcStatusLabel.textContent = 'Çevrimdışı (Kapalı)';
+    }
   }
 }
 
@@ -189,39 +258,42 @@ btnWake.addEventListener('click', async () => {
   isWaking = true;
   btnWake.classList.add('waking');
   wakeFeedback.classList.remove('hidden');
-  wakeFeedbackMsg.textContent = 'Sihirli Paket (Wake-on-LAN) gönderiliyor...';
+  wakeFeedbackMsg.textContent = 'Sihirli Paket (Wake-on-LAN) hazırlanıyor...';
 
-  appendLog('🚀 Wake-on-LAN sihirli paketi hazırlanıyor...', 'info');
+  const cfg = getLocalConfig();
+  appendLog(`🚀 Wake-on-LAN paketi hedefe yayınlanıyor: ${cfg.target_mac}`, 'info');
 
   try {
-    const res = await fetch('/api/wake', {
+    const res = await fetch(apiUrl('/api/wake'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken}`
       },
-      body: JSON.stringify({})
+      body: JSON.stringify({
+        mac: cfg.target_mac,
+        broadcast: cfg.broadcast_ip,
+        port: cfg.wol_port
+      })
     });
 
-    const data = await res.json();
+    if (res.ok) {
+      const data = await res.json();
+      appendLog(`✅ ${data.message || 'Sinyal başarıyla gönderildi!'}`, 'success');
+      wakeFeedbackMsg.textContent = 'Sinyal yollandı! Bilgisayarın açılması bekleniyor...';
 
-    if (res.ok && data.success) {
-      appendLog(`✅ ${data.message}`, 'success');
-      wakeFeedbackMsg.textContent = 'Sinyal yollandı! Bilgisayarın yanıt vermesi bekleniyor...';
-
-      // 40 saniye boyunca her 2 saniyede bir ping atıp açılıp açılmadığını kontrol et
       let attempts = 0;
       const pingCheckTimer = setInterval(async () => {
         attempts++;
         try {
-          const statusRes = await fetch('/api/status');
+          const statusRes = await fetch(apiUrl('/api/status'));
           const statusData = await statusRes.json();
           if (statusData.online) {
             clearInterval(pingCheckTimer);
             btnWake.classList.remove('waking');
             isWaking = false;
-            wakeFeedbackMsg.textContent = '🎉 BİLGİSAYAR AÇILDI VE AĞA BAĞLANDI!';
-            appendLog('🎉 Bilgisayar başarıyla açıldı ve çevrimiçi oldu!', 'success');
+            wakeFeedbackMsg.textContent = '🎉 BİLGİSAYAR AÇILDI VE ÇEVRİMİÇİ!';
+            appendLog('🎉 Bilgisayar başarıyla açıldı ve ağa bağlandı!', 'success');
             checkPcStatus();
             setTimeout(() => wakeFeedback.classList.add('hidden'), 5000);
             return;
@@ -232,25 +304,26 @@ btnWake.addEventListener('click', async () => {
           clearInterval(pingCheckTimer);
           btnWake.classList.remove('waking');
           isWaking = false;
-          wakeFeedbackMsg.textContent = 'Sinyal gitti ancak henüz ping alınamadı (Windows açılıyor olabilir).';
-          appendLog('⚠️ Paket gönderildi, BIOS/Windows WoL ayarlarının aktif olduğundan emin olun.', 'warn');
+          wakeFeedbackMsg.textContent = 'Sinyal iletildi. Windows açılıyor olabilir.';
+          appendLog('⚠️ Paket gönderildi. BIOS ve Aygıt Yöneticisi WoL ayarlarını kontrol edin.', 'warn');
           setTimeout(() => wakeFeedback.classList.add('hidden'), 5000);
         }
       }, 2000);
 
     } else {
-      appendLog(`❌ Hata: ${data.message}`, 'error');
-      wakeFeedbackMsg.textContent = data.message;
-      btnWake.classList.remove('waking');
-      isWaking = false;
-      setTimeout(() => wakeFeedback.classList.add('hidden'), 4000);
+      throw new Error(`Sunucu Hatası (${res.status})`);
     }
   } catch (err) {
-    appendLog(`❌ İstek başarısız: ${err.message}`, 'error');
-    wakeFeedbackMsg.textContent = 'Bağlantı hatası!';
+    if (window.location.hostname.includes('github.io') && !backendUrl) {
+      appendLog('⚠️ GitHub Pages statik modda çalışıyor. İnternetten evdeki bilgisayarı açmak için Ayarlar > Sunucu URL kısmına tünel adresinizi ekleyin.', 'warn');
+      wakeFeedbackMsg.textContent = 'GitHub Pages: Lütfen Ayarlar\'dan tünel linkini bağlayın.';
+    } else {
+      appendLog(`❌ İstek hatası: ${err.message}`, 'error');
+      wakeFeedbackMsg.textContent = 'Bağlantı kurulamadı!';
+    }
     btnWake.classList.remove('waking');
     isWaking = false;
-    setTimeout(() => wakeFeedback.classList.add('hidden'), 4000);
+    setTimeout(() => wakeFeedback.classList.add('hidden'), 5000);
   }
 });
 
@@ -259,7 +332,7 @@ async function sendPowerAction(action, confirmText) {
   if (!confirm(confirmText)) return;
   appendLog(`Güç komutu gönderiliyor: ${action}...`, 'warn');
   try {
-    const res = await fetch('/api/power', {
+    const res = await fetch(apiUrl('/api/power'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -285,19 +358,25 @@ btnShutdown.addEventListener('click', () => sendPowerAction('shutdown', 'Bilgisa
 
 // ================= AYARLAR MODALI =================
 async function loadConfig() {
+  const localCfg = getLocalConfig();
+  cfgMac.value = localCfg.target_mac;
+  cfgIp.value = localCfg.target_ip;
+  cfgBroadcast.value = localCfg.broadcast_ip;
+  cfgPort.value = localCfg.wol_port;
+  if (cfgServerUrl) cfgServerUrl.value = backendUrl;
+
   try {
-    const res = await fetch('/api/config', {
+    const res = await fetch(apiUrl('/api/config'), {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     const data = await res.json();
     if (data.success && data.config) {
       const c = data.config;
-      cfgMac.value = c.target_mac || '2C:F0:5D:A7:F0:EC';
-      cfgIp.value = c.target_ip || '192.168.1.114';
-      cfgBroadcast.value = c.broadcast_ip || '192.168.1.255';
-      cfgPort.value = c.wol_port || 9;
-      displayMac.textContent = c.target_mac;
-      displayIp.textContent = `${c.target_ip} : ${c.wol_port}`;
+      saveLocalConfig(c);
+      cfgMac.value = c.target_mac;
+      cfgIp.value = c.target_ip;
+      cfgBroadcast.value = c.broadcast_ip;
+      cfgPort.value = c.wol_port;
     }
   } catch (_) {}
 }
@@ -316,11 +395,19 @@ settingsForm.addEventListener('submit', async (e) => {
     target_mac: cfgMac.value.trim(),
     target_ip: cfgIp.value.trim(),
     broadcast_ip: cfgBroadcast.value.trim(),
-    wol_port: parseInt(cfgPort.value) || 9
+    wol_port: parseInt(cfgPort.value) || 9,
+    pc_name: 'Eren PC'
   };
 
+  saveLocalConfig(updated);
+
+  if (cfgServerUrl) {
+    backendUrl = cfgServerUrl.value.trim();
+    localStorage.setItem('backend_url', backendUrl);
+  }
+
   try {
-    const res = await fetch('/api/config', {
+    await fetch(apiUrl('/api/config'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -328,18 +415,11 @@ settingsForm.addEventListener('submit', async (e) => {
       },
       body: JSON.stringify(updated)
     });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      appendLog('Ağ ve MAC ayarları güncellendi.', 'success');
-      modalSettings.classList.add('hidden');
-      loadConfig();
-      checkPcStatus();
-    } else {
-      alert('Ayarlar kaydedilemedi: ' + data.message);
-    }
-  } catch (err) {
-    alert('Sunucu hatası: ' + err.message);
-  }
+  } catch (_) {}
+
+  appendLog('Ağ ve MAC ayarları güncellendi.', 'success');
+  modalSettings.classList.add('hidden');
+  checkPcStatus();
 });
 
 // ================= REHBER MODALI =================

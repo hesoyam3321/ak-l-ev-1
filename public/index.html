@@ -60,12 +60,12 @@
             <input type="password" id="password" placeholder="Şifrenizi girin..." required autofocus>
             <button type="button" id="toggle-password" class="icon-btn" title="Şifreyi Göster/Gizle">
               <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
               </svg>
             </button>
           </div>
-          <span class="hint-text">Varsayılan şifre: <strong></strong></span>
+          <span class="hint-text">Giriş şifrenizi girin</span>
         </div>
 
         <div id="login-error" class="error-banner hidden">
@@ -231,6 +231,11 @@
           <label for="cfg-port">WoL Portu</label>
           <input type="number" id="cfg-port" class="mono" value="9" required>
         </div>
+        <div class="form-group">
+          <label for="cfg-server-url">Sunucu / Tünel URL (GitHub Pages İçin)</label>
+          <input type="text" id="cfg-server-url" class="mono" placeholder="Örn: https://xxx.trycloudflare.com (Yerel ise boş bırakın)">
+          <span class="hint-text">GitHub'dan açtığınızda evinizdeki sunucuya bağlanmak için tünel adresi</span>
+        </div>
         <div class="modal-actions">
           <button type="button" id="btn-cancel-settings" class="btn-cancel">İptal</button>
           <button type="submit" class="btn-primary">Kaydet</button>
@@ -250,32 +255,24 @@
         <div class="guide-step">
           <div class="step-badge">1</div>
           <div class="step-text">
-            <strong>Telefondan Nasıl Bağlanırım?</strong>
-            <p>Telefonunuz ile bilgisayarınız aynı ev Wi-Fi ağına bağlıyken telefonunuzun tarayıcısına (Chrome /
-              Safari):</p>
-            <code class="code-box" id="guide-phone-url">http://192.168.1.114:5000</code>
-            <p>yazarak doğrudan bu paneli açabilirsiniz.</p>
+            <strong>GitHub Pages ile Telefondan Nasıl Açılır?</strong>
+            <p>Bu projeyi GitHub'a yükleyip Settings > Pages kısmından aktifleştirdiğinizde size özel bir link oluşur: <code>https://kullanici.github.io/proje-adi/</code>. Bu linki telefonunuzda favorilere ekleyerek her an açabilirsiniz!</p>
           </div>
         </div>
 
         <div class="guide-step">
           <div class="step-badge">2</div>
           <div class="step-text">
-            <strong>Windows Ağ Kartı Ayarı (Zorunlu):</strong>
-            <p>Aygıt Yöneticisi > Ağ Bağdaştırıcıları > <strong>Realtek PCIe GbE Family Controller</strong> > Özellikler
-              > Güç Yönetimi sekmesinde: <em>"Bu aygıtın bilgisayarı başlatmasına izin ver"</em> ve <em>"Yalnızca
-                sihirli bir paketin..."</em> kutularını işaretleyin.</p>
+            <strong>Telefondan Evdeki Bilgisayarı Tetikleme:</strong>
+            <p>GitHub Pages statik bir sitedir. Evdeki kapalı bilgisayarınıza internetten sihirli paket gönderebilmek için bilgisayarınızda veya evdeki bir cihazda ücretsiz Cloudflare Tunnel (<code>cloudflared</code>) açıp gelen https adresini Ayarlar > Sunucu URL kısmına yapıştırmanız yeterlidir.</p>
           </div>
         </div>
 
         <div class="guide-step">
           <div class="step-badge">3</div>
           <div class="step-text">
-            <strong>BIOS / Anakart Ayarı:</strong>
-            <p>Bilgisayar açılırken DEL/F2 tuşuna basın. <em>Power Management</em> veya <em>APM Configuration</em>
-              bölümünde <strong>"Wake on LAN"</strong> veya <strong>"Power On By PCIe Device"</strong> ayarını
-              <strong>Enabled</strong> yapın. <strong>ErP Ready</strong> varsa <strong>Disabled</strong> yapın.
-            </p>
+            <strong>Yerel Ağda Kullanım:</strong>
+            <p>Evde Wi-Fi'ye bağlıyken bilgisayarda <code>baslat.bat</code> dosyasını çalıştırıp telefonunuzdan doğrudan <code class="code-box" id="guide-phone-url">http://192.168.1.114:5000</code> adresine girebilirsiniz.</p>
           </div>
         </div>
       </div>

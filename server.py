@@ -154,15 +154,25 @@ class WolRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_json(200, {"success": True, "config": safe_cfg})
             return
 
-        # Statik Dosyalari Sun (public/)
-        if parsed_path == "/" or parsed_path == "":
-            file_path = os.path.join(PUBLIC_DIR, "index.html")
-        else:
-            rel_path = parsed_path.lstrip("/")
+        # Statik Dosyalari Sun (Kok Dizin veya public/)
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        rel_path = "index.html" if (parsed_path == "/" or parsed_path == "") else parsed_path.lstrip("/")
+
+        # Once kok dizine bak, yoksa public dizinine bak
+        file_path = os.path.join(BASE_DIR, rel_path)
+        if not (os.path.exists(file_path) and os.path.isfile(file_path)):
             file_path = os.path.join(PUBLIC_DIR, rel_path)
 
         # Guvenlik kontrolu (Directory Traversal engelleme)
-        if not os.path.abspath(file_path).startswith(os.path.abspath(PUBLIC_DIR)):
+        abs_file = os.path.abspath(file_path)
+        if not (abs_file.startswith(BASE_DIR) or abs_file.startswith(os.path.abspath(PUBLIC_DIR))):
+            self.send_response(403)
+            self.end_headers()
+            return
+
+        # Sadece statik izin verilen uzantilari sun
+        allowed_exts = (".html", ".css", ".js", ".json", ".png", ".jpg", ".svg", ".ico")
+        if not any(abs_file.lower().endswith(ext) for ext in allowed_exts):
             self.send_response(403)
             self.end_headers()
             return
